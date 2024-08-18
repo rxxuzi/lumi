@@ -48,6 +48,7 @@ func (w *WebUI) handleIndex(rw http.ResponseWriter, r *http.Request) {
 	}
 	tmpl.Execute(rw, nil)
 }
+
 func (w *WebUI) handleLaunch(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
@@ -97,7 +98,6 @@ func (w *WebUI) handleStatus(rw http.ResponseWriter, r *http.Request) {
 			"currentFileNumber": progress.CurrentFileNumber,
 			"terminated":        progress.Terminated,
 		}
-		log.Printf("Progress: %+v", progress)
 	}
 
 	json.NewEncoder(rw).Encode(response)

@@ -211,7 +211,7 @@ func processLink(config *Lumi, link string, progress *Progress) {
 		return
 	}
 
-	img := container.Find("img#image").First()
+	img := container.Find("#image").First()
 	if img.Length() == 0 {
 		fmt.Printf("No image found with id 'image' for link %s\n", link)
 		return
@@ -234,7 +234,9 @@ func processLink(config *Lumi, link string, progress *Progress) {
 
 	currentFileNumber := atomic.AddInt32(&progress.CurrentFileNumber, 1)
 
-	imageFileName := fmt.Sprintf("%s_%d.png", config.Project, currentFileNumber)
+	fileExt := strings.TrimPrefix(filepath.Ext(href), ".")
+
+	imageFileName := fmt.Sprintf("%s_%d.%s", config.Project, currentFileNumber, fileExt)
 	imagePath := filepath.Join(config.OutputDir(), imageFileName)
 
 	if err := raven.Download(imagePath, href); err != nil {
