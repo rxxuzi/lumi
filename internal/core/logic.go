@@ -3,19 +3,27 @@ package core
 import (
 	"fmt"
 	"github.com/rxxuzi/lumi/pkg/raven"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-const baseURL = "https://danbooru.donmai.us/posts"
+const (
+	baseURL    = "https://danbooru.donmai.us/posts"
+	maxPerPage = 20
+	minDelay   = 3 * time.Second
+	maxDelay   = 10 * time.Second
+	maxRetries = 3
+)
 
 type Progress struct {
 	TotalPages        int32
 	CompletedPages    int32
-	TotalImages       int32
+	TotalMedia        int32
 	DownloadedImages  int32
 	SkippedImages     int32
 	CurrentFileNumber int32
@@ -29,8 +37,10 @@ func Launch(config *Lumi) *Progress {
 	}
 
 	fmt.Printf("Output directory: %s\n", config.OutputDir())
+	fmt.Printf("Tag: %s\n", config.Tag)
 	fmt.Printf("Ignoring tags: %v\n", config.Ignore)
 	fmt.Printf("AND tags: %v\n", config.And)
+	fmt.Printf("Request Count: %v\n", config.MediaCount)
 
 	if err := os.MkdirAll(config.OutputDir(), os.ModePerm); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
@@ -38,16 +48,15 @@ func Launch(config *Lumi) *Progress {
 	}
 
 	progress := &Progress{
-		TotalPages: int32(config.Pages),
+		TotalMedia: int32(config.MediaCount),
 	}
 
+	guessPages := (config.MediaCount + maxPerPage - 1) / maxPerPage // Round up
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10)
+	semaphore := make(chan struct{}, 10) // Limit concurrent goroutines
 
-	for _, page := range config.PageRange() {
-		if progress.Terminated {
-			break
-		}
+	// First phase: Parallel crawling of estimated pages
+	for page := 1; page <= guessPages; page++ {
 		wg.Add(1)
 		go func(page int) {
 			defer wg.Done()
@@ -56,11 +65,17 @@ func Launch(config *Lumi) *Progress {
 			crawlPage(config, baseURL, page, progress)
 		}(page)
 	}
-
 	wg.Wait()
 
+	// Second phase: Sequential crawling if needed
+	currentPage := guessPages + 1
+	for config.ShouldContinue(int(progress.DownloadedImages)) && !progress.Terminated {
+		crawlPage(config, baseURL, currentPage, progress)
+		currentPage++
+	}
+
 	if progress.Terminated {
-		fmt.Println("Crawling process terminated early due to no more content")
+		fmt.Println("Crawling process terminated due to no more content")
 	}
 
 	fmt.Printf("Downloads completed. Downloaded: %d, Skipped: %d\n", progress.DownloadedImages, progress.SkippedImages)
@@ -71,9 +86,9 @@ func crawlPage(config *Lumi, baseURL string, page int, progress *Progress) {
 	url := fmt.Sprintf("%s?page=%d&tags=%s", baseURL, page, strings.Join(config.Tag, "+"))
 	fmt.Printf("Crawling page %d: %s\n", page, url)
 
-	r, err := raven.NewRaven(url)
+	r, err := fetchWithRetry(url)
 	if err != nil {
-		fmt.Printf("Error creating Raven for page %d: %v\n", page, err)
+		fmt.Printf("Error creating Raven for page %d after retries: %v\n", page, err)
 		return
 	}
 
@@ -84,19 +99,51 @@ func crawlPage(config *Lumi, baseURL string, page int, progress *Progress) {
 		return
 	}
 
-	atomic.AddInt32(&progress.TotalImages, int32(len(links)))
+	atomic.AddInt32(&progress.TotalPages, 1)
 
 	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, 5) // Limit concurrent goroutines
 	for _, link := range links {
+		if !config.ShouldContinue(int(progress.DownloadedImages)) {
+			return
+		}
 		wg.Add(1)
 		go func(link string) {
 			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 			processLink(config, link, progress)
 		}(link)
 	}
 	wg.Wait()
 
 	atomic.AddInt32(&progress.CompletedPages, 1)
+}
+
+func fetchWithRetry(url string) (*raven.Raven, error) {
+	var r *raven.Raven
+	var err error
+
+	for i := 0; i < maxRetries; i++ {
+		r, err = raven.NewRaven(url)
+		if err == nil && r.StatusCode != 429 {
+			return r, nil
+		}
+
+		if r != nil && r.StatusCode == 429 {
+			fmt.Printf("Rate limit exceeded for %s. Retrying after delay...\n", url)
+		} else {
+			fmt.Printf("Error fetching %s: %v. Retrying...\n", url, err)
+		}
+
+		time.Sleep(getRandomDelay())
+	}
+
+	return nil, fmt.Errorf("failed to fetch %s after %d retries", url, maxRetries)
+}
+
+func getRandomDelay() time.Duration {
+	return minDelay + time.Duration(rand.Int63n(int64(maxDelay-minDelay)))
 }
 
 func processLink(config *Lumi, link string, progress *Progress) {
@@ -106,10 +153,13 @@ func processLink(config *Lumi, link string, progress *Progress) {
 		return
 	}
 
+	fmt.Printf("Debug info for %s:\n%s\n", link, r.DebugInfo())
+
 	// Get the image-container
 	container := r.Get("image-container", raven.CLASS).First()
 	if container.Length() == 0 {
 		fmt.Printf("No image-container found for link %s\n", link)
+		fmt.Printf("Full HTML:\n%s\n", r.HTML)
 		return
 	}
 

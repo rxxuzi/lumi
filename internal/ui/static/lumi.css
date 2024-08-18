@@ -1,0 +1,103 @@
+:root {
+    --main-color: #77DD76;
+    --sub-color: #F49AC2;
+    --color-1: #BBF1C4;
+    --color-2: #E0F6E3;
+    --color-3: #F4D0D5;
+    --color-4: #F4B5C7;
+    --text-color: #333;
+    --background-color: #fff;
+    --input-background: #f8f8f8;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--color-2);
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background-color: var(--background-color);
+    border-radius: 10px;
+    box-shadow: 0 0 20px var(--shadow-color);
+}
+
+h1 {
+    color: var(--main-color);
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--sub-color);
+}
+
+input[type="text"],
+input[type="number"] {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--color-1);
+    border-radius: 4px;
+    background-color: var(--input-background);
+}
+
+button {
+    display: block;
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--main-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: var(--sub-color);
+}
+
+.status {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: var(--color-1);
+    border-radius: 4px;
+}
+
+.progress-container {
+    display: none;
+    margin-top: 1rem;
+}
+
+.progress-bar {
+    height: 20px;
+    background-color: var(--color-3);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: var(--sub-color);
+    width: 0;
+    transition: width 0.5s ease-in-out;
+}
+
+.progress-text {
+    margin-top: 0.5rem;
+    text-align: center;
+    color: var(--sub-color);
+}

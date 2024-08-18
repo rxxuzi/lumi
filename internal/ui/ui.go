@@ -48,7 +48,6 @@ func (w *WebUI) handleIndex(rw http.ResponseWriter, r *http.Request) {
 	}
 	tmpl.Execute(rw, nil)
 }
-
 func (w *WebUI) handleLaunch(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
@@ -60,6 +59,13 @@ func (w *WebUI) handleLaunch(rw http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// Validate and adjust MediaCount
+	if config.MediaCount < core.MIN_MEDIA_COUNT {
+		config.MediaCount = core.MIN_MEDIA_COUNT
+	} else if config.MediaCount > core.MAX_MEDIA_COUNT {
+		config.MediaCount = core.MAX_MEDIA_COUNT
 	}
 
 	w.setStatus("Running")
@@ -84,9 +90,7 @@ func (w *WebUI) handleStatus(rw http.ResponseWriter, r *http.Request) {
 
 	if progress != nil {
 		response["progress"] = map[string]interface{}{
-			"totalPages":        progress.TotalPages,
-			"completedPages":    progress.CompletedPages,
-			"totalImages":       progress.TotalImages,
+			"totalImages":       progress.TotalMedia,
 			"downloadedImages":  progress.DownloadedImages,
 			"skippedImages":     progress.SkippedImages,
 			"currentFileNumber": progress.CurrentFileNumber,

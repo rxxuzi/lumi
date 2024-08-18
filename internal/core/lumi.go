@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	PROJECT_DIR   string = "lumi-project"
-	DEFAULT_PAGES int    = 1
-	MIN_PAGES     int    = 1
-	MAX_PAGES     int    = 100
+	PROJECT_DIR         string = "lumi-project"
+	DEFAULT_MEDIA_COUNT int    = 20
+	MIN_MEDIA_COUNT     int    = 1
+	MAX_MEDIA_COUNT     int    = 10000
 )
 
 var (
@@ -20,12 +20,12 @@ var (
 )
 
 type Lumi struct {
-	Project  string   `json:"project"`
-	Database bool     `json:"database"`
-	Tag      []string `json:"tag"`
-	And      []string `json:"and"`
-	Ignore   []string `json:"ignore"`
-	Pages    int      `json:"pages"`
+	Project    string   `json:"project"`
+	Database   bool     `json:"database"`
+	Tag        []string `json:"tag"`
+	And        []string `json:"and"`
+	Ignore     []string `json:"ignore"`
+	MediaCount int      `json:"mediaCount"`
 }
 
 func LoadConfig(name string) (*Lumi, error) {
@@ -42,7 +42,7 @@ func LoadConfig(name string) (*Lumi, error) {
 	}
 
 	replaceSpacesWithUnderscore(&config)
-	validateAndAdjustPages(&config)
+	validateAndAdjustMediaCount(&config)
 	return &config, nil
 }
 
@@ -54,7 +54,7 @@ func DecodeConfig(content string) (*Lumi, error) {
 	}
 
 	replaceSpacesWithUnderscore(&config)
-	validateAndAdjustPages(&config)
+	validateAndAdjustMediaCount(&config)
 	return &config, nil
 }
 
@@ -70,13 +70,13 @@ func replaceSpacesWithUnderscore(config *Lumi) {
 	}
 }
 
-func validateAndAdjustPages(config *Lumi) {
-	if config.Pages == 0 {
-		config.Pages = DEFAULT_PAGES
-	} else if config.Pages < MIN_PAGES {
-		config.Pages = MIN_PAGES
-	} else if config.Pages > MAX_PAGES {
-		config.Pages = MAX_PAGES
+func validateAndAdjustMediaCount(config *Lumi) {
+	if config.MediaCount == 0 {
+		config.MediaCount = DEFAULT_MEDIA_COUNT
+	} else if config.MediaCount < MIN_MEDIA_COUNT {
+		config.MediaCount = MIN_MEDIA_COUNT
+	} else if config.MediaCount > MAX_MEDIA_COUNT {
+		config.MediaCount = MAX_MEDIA_COUNT
 	}
 }
 
@@ -84,10 +84,12 @@ func (l *Lumi) OutputDir() string {
 	return filepath.Join(PROJECT_DIR, l.Project)
 }
 
-func (l *Lumi) PageRange() []int {
-	pages := make([]int, l.Pages)
-	for i := range pages {
-		pages[i] = i + 1
-	}
-	return pages
+// InitialPage returns the starting page number (always 1)
+func (l *Lumi) InitialPage() int {
+	return 1
+}
+
+// ShouldContinue checks if more media should be downloaded based on the current count
+func (l *Lumi) ShouldContinue(currentCount int) bool {
+	return currentCount < l.MediaCount
 }

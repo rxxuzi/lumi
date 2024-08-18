@@ -1,6 +1,8 @@
 package raven
 
 import (
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,10 +20,12 @@ const (
 )
 
 type Raven struct {
-	URL      *url.URL
-	HTML     string
-	Document *goquery.Document
-	Origin   bool
+	URL            *url.URL
+	HTML           string
+	Document       *goquery.Document
+	Origin         bool
+	StatusCode     int
+	ResponseHeader http.Header
 }
 
 func NewRaven(urlStr string) (*Raven, error) {
@@ -30,27 +34,36 @@ func NewRaven(urlStr string) (*Raven, error) {
 		return nil, err
 	}
 
-	resp, err := http.Get(u.String())
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	html, err := doc.Html()
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, err
 	}
 
 	return &Raven{
-		URL:      u,
-		HTML:     html,
-		Document: doc,
-		Origin:   true,
+		URL:            u,
+		HTML:           string(bodyBytes),
+		Document:       doc,
+		Origin:         true,
+		StatusCode:     resp.StatusCode,
+		ResponseHeader: resp.Header,
 	}, nil
 }
 
@@ -149,4 +162,9 @@ func (r *Raven) GetURLs(query string, by By) []string {
 		}
 	})
 	return urls
+}
+
+func (r *Raven) DebugInfo() string {
+	return fmt.Sprintf("URL: %s\nStatus Code: %d\nContent Length: %s\n",
+		r.URL.String(), r.StatusCode, r.ResponseHeader.Get("Content-Length"))
 }
