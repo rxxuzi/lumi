@@ -27,6 +27,7 @@ type Progress struct {
 	DownloadedImages  int32
 	SkippedImages     int32
 	CurrentFileNumber int32
+	RequestedMedia    int32
 	Terminated        bool
 }
 
@@ -48,30 +49,35 @@ func Launch(config *Lumi) *Progress {
 	}
 
 	progress := &Progress{
-		TotalMedia: int32(config.MediaCount),
+		TotalMedia:     int32(config.MediaCount),
+		RequestedMedia: int32(config.MediaCount),
 	}
 
-	guessPages := (config.MediaCount + maxPerPage - 1) / maxPerPage // Round up
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Limit concurrent goroutines
+	fullPages := config.MediaCount / maxPerPage
 
-	// First phase: Parallel crawling of estimated pages
-	for page := 1; page <= guessPages; page++ {
-		wg.Add(1)
-		go func(page int) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			crawlPage(config, baseURL, page, progress)
-		}(page)
-	}
-	wg.Wait()
+	if fullPages == 0 {
+		// If media count is less than maxPerPage, do sequential processing
+		crawlPageSequential(config, baseURL, 1, progress, config.MediaCount)
+	} else {
+		// Parallel crawling for full pages
+		var wg sync.WaitGroup
+		semaphore := make(chan struct{}, 10)
 
-	// Second phase: Sequential crawling if needed
-	currentPage := guessPages + 1
-	for config.ShouldContinue(int(progress.DownloadedImages)) && !progress.Terminated {
-		crawlPage(config, baseURL, currentPage, progress)
-		currentPage++
+		for page := 1; page <= fullPages; page++ {
+			wg.Add(1)
+			go func(page int) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+				crawlPage(config, baseURL, page, progress)
+			}(page)
+		}
+		wg.Wait()
+
+		// Check if we need to continue crawling
+		if int(progress.DownloadedImages) < config.MediaCount {
+			continueSequentialCrawl(config, baseURL, fullPages+1, progress)
+		}
 	}
 
 	if progress.Terminated {
@@ -80,6 +86,50 @@ func Launch(config *Lumi) *Progress {
 
 	fmt.Printf("Downloads completed. Downloaded: %d, Skipped: %d\n", progress.DownloadedImages, progress.SkippedImages)
 	return progress
+}
+
+func continueSequentialCrawl(config *Lumi, baseURL string, startPage int, progress *Progress) {
+	currentPage := startPage
+	for int(progress.DownloadedImages) < config.MediaCount && !progress.Terminated {
+		remainingMedia := config.MediaCount - int(progress.DownloadedImages)
+		crawlPageSequential(config, baseURL, currentPage, progress, remainingMedia)
+		currentPage++
+	}
+}
+
+func crawlPageSequential(config *Lumi, baseURL string, page int, progress *Progress, limit int) {
+	url := fmt.Sprintf("%s?page=%d&tags=%s", baseURL, page, strings.Join(config.Tag, "+"))
+	fmt.Printf("Crawling page %d sequentially: %s\n", page, url)
+
+	r, err := fetchWithRetry(url)
+	if err != nil {
+		fmt.Printf("Error creating Raven for page %d after retries: %v\n", page, err)
+		return
+	}
+
+	links := r.GetURLs("post-preview-link", raven.CLASS)
+	if len(links) == 0 {
+		fmt.Printf("No links found on page %d. Terminating crawl.\n", page)
+		progress.Terminated = true
+		return
+	}
+
+	atomic.AddInt32(&progress.TotalPages, 1)
+
+	for _, link := range links {
+		if int(progress.DownloadedImages) >= config.MediaCount {
+			return
+		}
+		if !config.ShouldContinue(int(progress.DownloadedImages)) {
+			return
+		}
+		processLink(config, link, progress)
+		if int(progress.DownloadedImages) >= int(progress.TotalPages)*maxPerPage {
+			return
+		}
+	}
+
+	atomic.AddInt32(&progress.CompletedPages, 1)
 }
 
 func crawlPage(config *Lumi, baseURL string, page int, progress *Progress) {
@@ -102,7 +152,7 @@ func crawlPage(config *Lumi, baseURL string, page int, progress *Progress) {
 	atomic.AddInt32(&progress.TotalPages, 1)
 
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 5) // Limit concurrent goroutines
+	semaphore := make(chan struct{}, 5)
 	for _, link := range links {
 		if !config.ShouldContinue(int(progress.DownloadedImages)) {
 			return
@@ -152,8 +202,6 @@ func processLink(config *Lumi, link string, progress *Progress) {
 		fmt.Printf("Error creating Raven for link %s: %v\n", link, err)
 		return
 	}
-
-	fmt.Printf("Debug info for %s:\n%s\n", link, r.DebugInfo())
 
 	// Get the image-container
 	container := r.Get("image-container", raven.CLASS).First()

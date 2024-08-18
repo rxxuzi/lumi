@@ -90,12 +90,14 @@ func (w *WebUI) handleStatus(rw http.ResponseWriter, r *http.Request) {
 
 	if progress != nil {
 		response["progress"] = map[string]interface{}{
-			"totalImages":       progress.TotalMedia,
+			"totalMedia":        progress.TotalMedia,
+			"requestedMedia":    progress.RequestedMedia,
 			"downloadedImages":  progress.DownloadedImages,
 			"skippedImages":     progress.SkippedImages,
 			"currentFileNumber": progress.CurrentFileNumber,
 			"terminated":        progress.Terminated,
 		}
+		log.Printf("Progress: %+v", progress)
 	}
 
 	json.NewEncoder(rw).Encode(response)
