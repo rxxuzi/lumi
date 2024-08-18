@@ -1,10 +1,9 @@
-package main
+package core
 
 import (
-	"strings"
-
 	"github.com/PuerkitoBio/goquery"
 	"github.com/rxxuzi/lumi/pkg/raven"
+	"strings"
 )
 
 type Caption struct {

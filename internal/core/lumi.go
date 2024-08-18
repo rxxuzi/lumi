@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"encoding/json"
@@ -6,6 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+const (
+	PROJECT_DIR   string = "lumi-project"
+	DEFAULT_PAGES int    = 1
+	MIN_PAGES     int    = 1
+	MAX_PAGES     int    = 100
+)
+
+var (
+	noText bool
 )
 
 type Lumi struct {
@@ -31,6 +42,7 @@ func LoadConfig(name string) (*Lumi, error) {
 	}
 
 	replaceSpacesWithUnderscore(&config)
+	validateAndAdjustPages(&config)
 	return &config, nil
 }
 
@@ -42,6 +54,7 @@ func DecodeConfig(content string) (*Lumi, error) {
 	}
 
 	replaceSpacesWithUnderscore(&config)
+	validateAndAdjustPages(&config)
 	return &config, nil
 }
 
@@ -54,6 +67,16 @@ func replaceSpacesWithUnderscore(config *Lumi) {
 	}
 	for i, ignore := range config.Ignore {
 		config.Ignore[i] = strings.ReplaceAll(ignore, " ", "_")
+	}
+}
+
+func validateAndAdjustPages(config *Lumi) {
+	if config.Pages == 0 {
+		config.Pages = DEFAULT_PAGES
+	} else if config.Pages < MIN_PAGES {
+		config.Pages = MIN_PAGES
+	} else if config.Pages > MAX_PAGES {
+		config.Pages = MAX_PAGES
 	}
 }
 

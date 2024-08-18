@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumi WebUI</title>
+</head>
+<body>
+<h1>Lumi</h1>
+<form id="lumiForm">
+    <label for="project">Project Name:</label>
+    <input type="text" id="project" name="project" required>
+
+    <label for="database">
+        <input type="checkbox" id="database" name="database">
+        Use Database
+    </label>
+
+    <label for="tag">Tags (comma-separated):</label>
+    <input type="text" id="tag" name="tag" required>
+
+    <label for="and">AND Tags (comma-separated):</label>
+    <input type="text" id="and" name="and">
+
+    <label for="ignore">Ignore Tags (comma-separated):</label>
+    <input type="text" id="ignore" name="ignore">
+
+    <label for="pages">Number of Pages (1-100):</label>
+    <input type="number" id="pages" name="pages" min="1" max="100" value="1" required>
+
+    <button type="submit">Launch Lumi</button>
+</form>
+
+<div id="status"></div>
+
+<script>
+    document.getElementById('lumiForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const jsonData = {};
+
+        formData.forEach((value, key) => {
+            if (key === 'tag' || key === 'and' || key === 'ignore') {
+                jsonData[key] = value.split(',').map(item => item.trim()).filter(item => item !== '');
+            } else if (key === 'database') {
+                jsonData[key] = value === 'on';
+            } else if (key === 'pages') {
+                jsonData[key] = Math.min(Math.max(parseInt(value) || 1, 1), 100);
+            } else {
+                jsonData[key] = value;
+            }
+        });
+
+        if (jsonData.tag.length > 2) {
+            alert('Please use 2 or fewer tags');
+            return;
+        }
+
+        fetch('/launch', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(jsonData),
+        })
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('status').textContent = data;
+                pollStatus();
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            });
+    });
+
+    function pollStatus() {
+        const statusElement = document.getElementById('status');
+        const interval = setInterval(() => {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    statusElement.textContent = `Current status: ${data.status}`;
+                    if (data.status === 'Completed') {
+                        clearInterval(interval);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error polling status:', error);
+                    clearInterval(interval);
+                });
+        }, 5000);
+    }
+</script>
+</body>
+</html>

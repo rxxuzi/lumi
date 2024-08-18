@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"fmt"
@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 )
 
+const baseURL = "https://danbooru.donmai.us/posts"
+
 func Launch(config *Lumi) {
 	if len(config.Tag) > 2 {
 		fmt.Println("Please use 2 or fewer tags")
@@ -19,8 +21,6 @@ func Launch(config *Lumi) {
 	fmt.Printf("Output directory: %s\n", config.OutputDir())
 	fmt.Printf("Ignoring tags: %v\n", config.Ignore)
 	fmt.Printf("AND tags: %v\n", config.And)
-
-	baseURL := "https://danbooru.donmai.us/posts"
 
 	if err := os.MkdirAll(config.OutputDir(), os.ModePerm); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
@@ -118,7 +118,6 @@ func processLink(config *Lumi, link string, fileNumber, skippedCount *int32) {
 	} else {
 		fmt.Printf("Downloaded: %s \n", imageFileName)
 	}
-
 }
 
 func saveCaption(tags []string, filepath string) error {
