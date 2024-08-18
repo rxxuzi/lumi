@@ -32,7 +32,13 @@
 </form>
 
 <div id="status"></div>
-
+<div id="progress-container" style="display:none;">
+    <h3>Progress</h3>
+    <div class="progress-bar">
+        <span class="progress-bar-fill" style="width: 0%;"></span>
+    </div>
+    <p id="progress-text"></p>
+</div>
 <script>
     document.getElementById('lumiForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -51,11 +57,6 @@
                 jsonData[key] = value;
             }
         });
-
-        if (jsonData.tag.length > 2) {
-            alert('Please use 2 or fewer tags');
-            return;
-        }
 
         fetch('/launch', {
             method: 'POST',
@@ -77,20 +78,39 @@
 
     function pollStatus() {
         const statusElement = document.getElementById('status');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.querySelector('.progress-bar-fill');
+        const progressText = document.getElementById('progress-text');
+
         const interval = setInterval(() => {
             fetch('/status')
                 .then(response => response.json())
                 .then(data => {
                     statusElement.textContent = `Current status: ${data.status}`;
+
+                    if (data.progress) {
+                        progressContainer.style.display = 'block';
+                        const progress = data.progress;
+                        const percentage = (progress.completedPages / progress.totalPages) * 100 || 0;
+                        progressBar.style.width = `${percentage}%`;
+                        progressText.textContent = `Pages: ${progress.completedPages}/${progress.totalPages},
+                                                    Images: ${progress.downloadedImages}/${progress.totalImages}
+                                                    (Skipped: ${progress.skippedImages})`;
+                    }
+
                     if (data.status === 'Completed') {
                         clearInterval(interval);
+                    }
+
+                    if (data.progress && data.progress.terminated) {
+                        statusElement.textContent += " (Terminated early due to no more content)";
                     }
                 })
                 .catch(error => {
                     console.error('Error polling status:', error);
                     clearInterval(interval);
                 });
-        }, 5000);
+        }, 1000);
     }
 </script>
 </body>

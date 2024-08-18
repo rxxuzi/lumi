@@ -12,10 +12,20 @@ import (
 
 const baseURL = "https://danbooru.donmai.us/posts"
 
-func Launch(config *Lumi) {
+type Progress struct {
+	TotalPages        int32
+	CompletedPages    int32
+	TotalImages       int32
+	DownloadedImages  int32
+	SkippedImages     int32
+	CurrentFileNumber int32
+	Terminated        bool
+}
+
+func Launch(config *Lumi) *Progress {
 	if len(config.Tag) > 2 {
 		fmt.Println("Please use 2 or fewer tags")
-		return
+		return nil
 	}
 
 	fmt.Printf("Output directory: %s\n", config.OutputDir())
@@ -24,28 +34,40 @@ func Launch(config *Lumi) {
 
 	if err := os.MkdirAll(config.OutputDir(), os.ModePerm); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
-		return
+		return nil
+	}
+
+	progress := &Progress{
+		TotalPages: int32(config.Pages),
 	}
 
 	var wg sync.WaitGroup
-	var fileNumber int32 = 1
-	var skippedCount int32 = 0
+	semaphore := make(chan struct{}, 10)
 
 	for _, page := range config.PageRange() {
+		if progress.Terminated {
+			break
+		}
 		wg.Add(1)
 		go func(page int) {
 			defer wg.Done()
-			crawlPage(config, baseURL, page, &fileNumber, &skippedCount)
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			crawlPage(config, baseURL, page, progress)
 		}(page)
 	}
 
 	wg.Wait()
 
-	totalDownloaded := atomic.LoadInt32(&fileNumber) - 1
-	fmt.Printf("Downloads completed. Downloaded: %d, Skipped: %d\n", totalDownloaded, atomic.LoadInt32(&skippedCount))
+	if progress.Terminated {
+		fmt.Println("Crawling process terminated early due to no more content")
+	}
+
+	fmt.Printf("Downloads completed. Downloaded: %d, Skipped: %d\n", progress.DownloadedImages, progress.SkippedImages)
+	return progress
 }
 
-func crawlPage(config *Lumi, baseURL string, page int, fileNumber, skippedCount *int32) {
+func crawlPage(config *Lumi, baseURL string, page int, progress *Progress) {
 	url := fmt.Sprintf("%s?page=%d&tags=%s", baseURL, page, strings.Join(config.Tag, "+"))
 	fmt.Printf("Crawling page %d: %s\n", page, url)
 
@@ -56,12 +78,28 @@ func crawlPage(config *Lumi, baseURL string, page int, fileNumber, skippedCount 
 	}
 
 	links := r.GetURLs("post-preview-link", raven.CLASS)
-	for _, link := range links {
-		processLink(config, link, fileNumber, skippedCount)
+	if len(links) == 0 {
+		fmt.Printf("No links found on page %d. Terminating crawl.\n", page)
+		progress.Terminated = true
+		return
 	}
+
+	atomic.AddInt32(&progress.TotalImages, int32(len(links)))
+
+	var wg sync.WaitGroup
+	for _, link := range links {
+		wg.Add(1)
+		go func(link string) {
+			defer wg.Done()
+			processLink(config, link, progress)
+		}(link)
+	}
+	wg.Wait()
+
+	atomic.AddInt32(&progress.CompletedPages, 1)
 }
 
-func processLink(config *Lumi, link string, fileNumber, skippedCount *int32) {
+func processLink(config *Lumi, link string, progress *Progress) {
 	r, err := raven.NewRaven(link)
 	if err != nil {
 		fmt.Printf("Error creating Raven for link %s: %v\n", link, err)
@@ -85,26 +123,29 @@ func processLink(config *Lumi, link string, fileNumber, skippedCount *int32) {
 
 	caption := NewCaption(r)
 	if caption.ContainsIgnoredTags(config.Ignore) {
-		atomic.AddInt32(skippedCount, 1)
+		atomic.AddInt32(&progress.SkippedImages, 1)
 		fmt.Println("Skipped due to ignored tags")
 		return
 	}
 
 	if !caption.ContainsAllAndTags(config.And) {
-		atomic.AddInt32(skippedCount, 1)
+		atomic.AddInt32(&progress.SkippedImages, 1)
 		fmt.Println("Skipped due to missing AND tags")
 		return
 	}
 
-	currentFileNumber := atomic.AddInt32(fileNumber, 1)
+	currentFileNumber := atomic.AddInt32(&progress.CurrentFileNumber, 1)
 
 	imageFileName := fmt.Sprintf("%s_%d.png", config.Project, currentFileNumber)
 	imagePath := filepath.Join(config.OutputDir(), imageFileName)
 
 	if err := raven.Download(imagePath, href); err != nil {
 		fmt.Printf("Error downloading image: %v\n", err)
+		atomic.AddInt32(&progress.SkippedImages, 1)
 		return
 	}
+
+	atomic.AddInt32(&progress.DownloadedImages, 1)
 
 	if !noText {
 		textFileName := fmt.Sprintf("%s_%d.txt", config.Project, currentFileNumber)

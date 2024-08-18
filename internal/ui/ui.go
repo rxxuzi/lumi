@@ -12,9 +12,10 @@ import (
 )
 
 type WebUI struct {
-	Port   int
-	Status string
-	mu     sync.Mutex
+	Port     int
+	Status   string
+	Progress *core.Progress
+	mu       sync.Mutex
 }
 
 func NewWebUI(port int) *WebUI {
@@ -63,7 +64,7 @@ func (w *WebUI) handleLaunch(rw http.ResponseWriter, r *http.Request) {
 
 	w.setStatus("Running")
 	go func() {
-		core.Launch(&config)
+		w.Progress = core.Launch(&config)
 		w.setStatus("Completed")
 	}()
 
@@ -74,9 +75,26 @@ func (w *WebUI) handleLaunch(rw http.ResponseWriter, r *http.Request) {
 func (w *WebUI) handleStatus(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
 	status := w.Status
+	progress := w.Progress
 	w.mu.Unlock()
 
-	json.NewEncoder(rw).Encode(map[string]string{"status": status})
+	response := map[string]interface{}{
+		"status": status,
+	}
+
+	if progress != nil {
+		response["progress"] = map[string]interface{}{
+			"totalPages":        progress.TotalPages,
+			"completedPages":    progress.CompletedPages,
+			"totalImages":       progress.TotalImages,
+			"downloadedImages":  progress.DownloadedImages,
+			"skippedImages":     progress.SkippedImages,
+			"currentFileNumber": progress.CurrentFileNumber,
+			"terminated":        progress.Terminated,
+		}
+	}
+
+	json.NewEncoder(rw).Encode(response)
 }
 
 func (w *WebUI) setStatus(status string) {
